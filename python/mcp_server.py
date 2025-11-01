@@ -33,10 +33,23 @@ async def call_godot_api(endpoint: str, params: dict = None) -> dict:
     Call Godot HTTP API endpoint with error handling
     """
     url = f"{GODOT_BASE_URL}{endpoint}"
-    
+
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=params or {})
+        # Configure httpx to work with Godot's custom HTTP server
+        # Disable connection pooling, use HTTP/1.1 only, and bypass proxy for localhost
+        limits = httpx.Limits(max_keepalive_connections=0, max_connections=1)
+        async with httpx.AsyncClient(
+            timeout=30.0,
+            http2=False,
+            limits=limits,
+            follow_redirects=False,
+            trust_env=False  # Disable proxy from environment variables for localhost
+        ) as client:
+            response = await client.post(
+                url,
+                json=params or {},
+                headers={'Connection': 'close'}
+            )
             response.raise_for_status()
             return response.json()
     except httpx.HTTPError as e:
@@ -958,8 +971,18 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent | ImageConten
     # Handle Godot process management tools (don't need Godot running)
     if name == "check_godot_running":
         try:
-            async with httpx.AsyncClient(timeout=2.0) as client:
-                response = await client.get(f"{GODOT_BASE_URL}/project_info")
+            limits = httpx.Limits(max_keepalive_connections=0, max_connections=1)
+            async with httpx.AsyncClient(
+                timeout=2.0,
+                http2=False,
+                limits=limits,
+                follow_redirects=False,
+                trust_env=False  # Disable proxy from environment variables for localhost
+            ) as client:
+                response = await client.get(
+                    f"{GODOT_BASE_URL}/project_info",
+                    headers={'Connection': 'close'}
+                )
                 return [TextContent(
                     type="text",
                     text=json.dumps({
@@ -968,7 +991,7 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent | ImageConten
                         "responsive": response.status_code == 200
                     }, indent=2)
                 )]
-        except:
+        except Exception:
             return [TextContent(
                 type="text",
                 text=json.dumps({
